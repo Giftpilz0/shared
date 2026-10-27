@@ -1,0 +1,70 @@
+# Reusable lint workflow: runs `just lint` (pre-commit on all files) in the calling repository.
+#
+#   jobs:
+#     lint:
+#       uses: Giftpilz0/shared/.github/workflows/lint.yml@main
+#
+# Toolchains are installed only when the repository needs them:
+#   go.mod -> Go (golangci-lint), *.tf -> OpenTofu (terraform_fmt),
+#   bun.lock -> Node + bun (local hooks such as prettier, eslint, svelte-check)
+name: lint
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    env:
+      PRE_COMMIT_COLOR: always
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Detect toolchains
+        id: detect
+        run: |
+          {
+            echo "go=$([ -f go.mod ] && echo true || echo false)"
+            echo "tofu=$([ -n "$(git ls-files '*.tf')" ] && echo true || echo false)"
+            echo "bun=$([ -n "$(git ls-files 'bun.lock' '*/bun.lock')" ] && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v7
+        if: steps.detect.outputs.go == 'true'
+        with:
+          go-version-file: go.mod
+
+      - uses: opentofu/setup-opentofu@v2
+        if: steps.detect.outputs.tofu == 'true'
+        with:
+          tofu_wrapper: false
+
+      # bun installs and runs scripts; the tools themselves run on Node
+      - uses: actions/setup-node@v7
+        if: steps.detect.outputs.bun == 'true'
+        with:
+          node-version: lts/*
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.detect.outputs.bun == 'true'
+
+      - uses: astral-sh/setup-uv@v10.3.2
+
+      # Hooks can pin their Python (ansible-lint: python3.14); the runner doesn't ship it
+      - run: uv python install 3.14
+
+      - uses: extractions/setup-just@v4
+
+      - name: Install pre-commit
+        run: uv tool install pre-commit
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Lint
+        run: just lint --show-diff-on-failure
