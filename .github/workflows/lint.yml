@@ -51,7 +51,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         if: steps.detect.outputs.bun == 'true'
 
-      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: astral-sh/setup-uv@v10.3.3
 
       # Hooks can pin their Python (ansible-lint: python3.14); the runner doesn't ship it
       - run: uv python install 3.14
